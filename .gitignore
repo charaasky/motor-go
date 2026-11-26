@@ -1,0 +1,26 @@
+# motor-go — .gitignore
+
+# Binario compilado (se construye con `go build`)
+/px-motor
+
+# Sondas eBPF compiladas (se regeneran con clang -target bpf; ver README § Build)
+*.bpf.o
+
+# Header BTF generado (bpftool btf dump)
+/vmlinux.h
+
+# Binarios de las herramientas auxiliares
+/policygen/policygen
+/licgen/licgen
+/licserver/licserver
+
+# Backups
+*.bak
+
+# Estado / señales de runtime y secretos (NUNCA versionar)
+*.enc
+*.hmac
+*.fpignore
+/px-motor.conf
+/vendor.key
+*.key
