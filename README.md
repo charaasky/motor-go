@@ -4,6 +4,51 @@ Detector **escrito desde cero** (no deriva de Falco/Suricata). Dos sondas eBPF
 mínimas; **toda la lógica de detección vive en Go** (tu IP, licenciable como
 quieras).
 
+## Descripción
+
+`px-motor` es un **detector de intrusiones (IDS/HIDS)** de host y de red, escrito en Go y montado
+sobre eBPF: observa el kernel sin módulos ni agentes, clasifica lo que ve en reglas con umbrales y
+emite una alerta JSONL por evento.
+
+Qué hace, una línea por capa:
+
+- **Comportamiento**: vigila syscalls (`exec`, `connect`, `mmap`, `ptrace`, `openat`) y hooks LSM
+  (`io_uring`, `task_kill`, `chmod/rename/unlink/setxattr`) para detectar ejecución de shells,
+  exfiltración, lectura de credenciales, `mmap` RWX, `ptrace`, persistencia y borrado de evidencia.
+- **Red**: cuenta tráfico en XDP (L2/L3) para detectar tormentas ARP, fragmentación y protocolos
+  anómalos, y hace *sniffing* HTTP L7 con firmas propias (SQLi, XSS, SSTI, traversal, webshell…).
+- **Adaptación**: entrena un baseline (negative selection), madura "clones" (antígenos repetidos)
+  y correlaciona en kill-chain / beaconing.
+- **Respuesta activa**: puede matar el proceso ofensor (y su árbol) o descartar la IP origen en XDP.
+- **Integridad y anti-tampering**: vigila archivos por SHA-256 y se protege a sí mismo de ser
+  matado por señales (hook `task_kill`).
+
+Es un binario **estático** (`CGO_ENABLED=0`) que embebe las sondas eBPF: no necesita runtime de
+lenguaje en el host y corre tanto como proceso de host como en contenedor privilegiado.
+
+## Alcances
+
+**Cubierto (in scope):**
+
+- Detección de comportamiento por syscalls y hooks LSM (RCE, exfil, credenciales, persistencia, evasión).
+- Red L2/L3 en XDP (ARP/fragmentación/protocolos anómalos) y firmas HTTP L7 en claro (SQLi/XSS/SSTI/…).
+- Correlación adaptativa: baseline, maduración clonal, kill-chain, beaconing, osmosis de volumen.
+- Integridad de archivos (SHA-256) y defensa anti-tampering de sí mismo.
+- Respuesta activa: SIGKILL de árboles de procesos y drop XDP de IPs.
+- Salida JSONL (stdout o `-output`) compatible con un `responder` externo.
+- Licenciamiento firmado (Ed25519) ligado a la máquina (`-license` / `-activate`).
+
+**Fuera de alcance (out of scope):**
+
+- **No es un sandbox**: detecta escapes, no los contiene (eso es gVisor/Firecracker/namespaces).
+- **No inspecciona TLS**: las firmas HTTP L7 operan sobre tráfico en claro; no hay MITM/descifrado.
+- **No reemplaza un firewall/WAF completo**: el drop XDP es puntual (IP + TTL), no una política de red.
+- **No persiste ni correlaciona a largo plazo**: emite eventos; el SIEM/almacenamiento es externo.
+- **No es ML por flujo**: las anomalías de red son heurísticas (umbrales/baseline), no un modelo
+  entrenado sobre tráfico etiquetado.
+- **Linux/x86_64 únicamente**: requiere kernel con BTF/eBPF y `clang -target bpf`; XDP necesita una
+  interfaz con driver que lo soporte (no `lo`).
+
 ## Arquitectura
 
 ```
@@ -112,7 +157,6 @@ CGO_ENABLED=0 go build -o px-motor .
 ```
 Si tocás un `.bpf.c`, tenés que **recompilar su `.bpf.o`** antes del `go build` (el binario embebe
 el `.o`, no el `.c`). Sin `clang`, `go build` reusa el `.o` viejo en silencio.
-```
 
 ## Anti-tampering (task_kill)
 
